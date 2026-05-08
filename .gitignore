@@ -18,10 +18,12 @@ dist/
 *.swo
 
 # Project Specific
+Doc/
 Code/backend/yolov8n.pt
 Code/backend/runs/
 Code/backend/hazards/
 Code/backend/*.log
+
 
 # OS
 .DS_Store
