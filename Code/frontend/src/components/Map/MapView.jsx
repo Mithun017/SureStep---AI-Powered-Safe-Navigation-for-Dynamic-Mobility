@@ -9,18 +9,18 @@ import markerShadow from 'leaflet/dist/images/marker-shadow.png';
 import destIconUrl from 'leaflet/dist/images/marker-icon-2x.png'; // Using 2x for destination to differentiate
 
 let DefaultIcon = L.icon({
-    iconUrl: markerIcon,
-    shadowUrl: markerShadow,
-    iconSize: [25, 41],
-    iconAnchor: [12, 41]
+  iconUrl: markerIcon,
+  shadowUrl: markerShadow,
+  iconSize: [25, 41],
+  iconAnchor: [12, 41]
 });
 
 let DestIcon = L.icon({
-    iconUrl: markerIcon, // Fallback to same icon but we'll color it via CSS or use a different one
-    shadowUrl: markerShadow,
-    iconSize: [30, 46],
-    iconAnchor: [15, 46],
-    className: 'destination-marker'
+  iconUrl: markerIcon, // Fallback to same icon but we'll color it via CSS or use a different one
+  shadowUrl: markerShadow,
+  iconSize: [30, 46],
+  iconAnchor: [15, 46],
+  className: 'destination-marker'
 });
 
 L.Marker.prototype.options.icon = DefaultIcon;
@@ -48,9 +48,9 @@ const MapView = ({ lat, lon, hazards, destination, style }) => {
       position: 'relative',
       ...style
     }}>
-      <MapContainer 
-        center={[lat || 0, lon || 0]} 
-        zoom={17} 
+      <MapContainer
+        center={[lat || 0, lon || 0]}
+        zoom={17}
         style={{ height: '100%', width: '100%' }}
         zoomControl={false}
       >
@@ -58,13 +58,13 @@ const MapView = ({ lat, lon, hazards, destination, style }) => {
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         />
-        
+
         {lat && lon && (
           <>
-            <Circle 
-              center={[lat, lon]} 
-              radius={20} 
-              pathOptions={{ fillColor: 'var(--color-primary)', fillOpacity: 0.3, color: 'var(--color-primary)', weight: 1 }} 
+            <Circle
+              center={[lat, lon]}
+              radius={20}
+              pathOptions={{ fillColor: 'var(--color-primary)', fillOpacity: 0.3, color: 'var(--color-primary)', weight: 1 }}
             />
             <Marker position={[lat, lon]}>
               <Popup>Your Location</Popup>
@@ -83,11 +83,11 @@ const MapView = ({ lat, lon, hazards, destination, style }) => {
         )}
 
         {hazards.map((h, i) => (
-          <Circle 
+          <Circle
             key={i}
-            center={[h.lat, h.lon]} 
-            radius={10} 
-            pathOptions={{ fillColor: 'var(--color-danger)', fillOpacity: 0.6, color: 'var(--color-danger)', weight: 2 }} 
+            center={[h.lat, h.lon]}
+            radius={10}
+            pathOptions={{ fillColor: 'var(--color-danger)', fillOpacity: 0.6, color: 'var(--color-danger)', weight: 2 }}
           />
         ))}
       </MapContainer>

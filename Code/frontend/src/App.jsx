@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import axios from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Map, Camera, Settings, Activity, User, Monitor, Globe, MessageSquare, Send, X, LogOut, RefreshCw, Share2, Check } from 'lucide-react';
+import { Map, Camera, Settings, Activity, User, Monitor, Globe, MessageSquare, Send, X, LogOut, RefreshCw, Share2, Check, Clock, Navigation } from 'lucide-react';
 
 import { useGPS } from './hooks/useGPS';
 import { useAccelerometer } from './hooks/useAccelerometer';
@@ -25,14 +25,12 @@ const DEFAULT_API_BASE = 'http://localhost:8000/api';
 
 function App() {
   const [apiBase, setApiBase] = useState(() => {
-    // 1. Check URL params first (Smart Linking)
     const params = new URLSearchParams(window.location.search);
     const apiParam = params.get('api');
     if (apiParam) {
       localStorage.setItem('SURESTEP_API_URL', apiParam);
       return apiParam;
     }
-    // 2. Check localStorage
     return localStorage.getItem('SURESTEP_API_URL') || DEFAULT_API_BASE;
   });
 
@@ -61,6 +59,32 @@ function App() {
   const chatEndRef = useRef(null);
   const visionRef = useRef(null);
 
+  // Helper: Calculate Trip Stats
+  const tripStats = useMemo(() => {
+    if (!destination || !gps.lat || !gps.lon) return null;
+    
+    // Haversine distance
+    const R = 6371; // km
+    const dLat = (destination.lat - gps.lat) * Math.PI / 180;
+    const dLon = (destination.lon - gps.lon) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+              Math.cos(gps.lat * Math.PI / 180) * Math.cos(destination.lat * Math.PI / 180) *
+              Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    const distance = R * c;
+
+    // ETA calculation
+    let eta = "--";
+    const speedKmh = gps.speed * 3.6;
+    if (speedKmh > 1) {
+      const hours = distance / speedKmh;
+      const mins = Math.round(hours * 60);
+      eta = mins > 60 ? `${Math.floor(mins/60)}h ${mins%60}m` : `${mins} min`;
+    }
+
+    return { distance: distance.toFixed(2), eta };
+  }, [destination, gps.lat, gps.lon, gps.speed]);
+
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
@@ -75,12 +99,10 @@ function App() {
   const handleShareLink = async () => {
     const frontendUrl = window.location.origin + window.location.pathname;
     const shareableUrl = `${frontendUrl}?api=${apiBase}`;
-    
     try {
       if (navigator.clipboard && window.isSecureContext) {
         await navigator.clipboard.writeText(shareableUrl);
       } else {
-        // Fallback for non-HTTPS or old browsers
         const textArea = document.createElement("textarea");
         textArea.value = shareableUrl;
         document.body.appendChild(textArea);
@@ -88,12 +110,10 @@ function App() {
         document.execCommand('copy');
         document.body.removeChild(textArea);
       }
-      
       setIsCopied(true);
       setTimeout(() => setIsCopied(false), 3000);
     } catch (err) {
       console.error("Copy failed", err);
-      alert("Please copy this URL manually: " + shareableUrl);
     }
   };
 
@@ -173,7 +193,7 @@ function App() {
       connectWS(dbUser, sessionRes.data);
     } catch (err) {
       console.error("Join failed:", err);
-      alert("Connection to backend failed. Ensure backend is running and Ngrok is active.");
+      alert("Connection failed. Check your Ngrok backend URL.");
       setShowApiSettings(true);
       setIsInitializing(false);
     }
@@ -296,12 +316,10 @@ function App() {
   return (
     <div className="app-container" style={{ position: 'relative', height: '100vh', width: '100vw', background: '#0a0a14', overflow: 'hidden' }}>
       
-      {/* Background Map View */}
       <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 0 }}>
         <MapView lat={gps.lat} lon={gps.lon} hazards={hazards} destination={destination} />
       </div>
 
-      {/* Left Side User Panel */}
       <div style={{ position: 'absolute', top: '140px', left: '20px', zIndex: 100 }}>
         <UserList 
           users={activeUsers} 
@@ -311,10 +329,8 @@ function App() {
         />
       </div>
 
-      {/* Local AI Vision Window */}
       <LocalVision ref={visionRef} detections={alert.detections} />
 
-      {/* Remote View Window + Chat */}
       <AnimatePresence>
         {viewingUserId && viewingUserId !== user.id && (
           <motion.div
@@ -323,22 +339,10 @@ function App() {
             exit={{ scale: 0.9, opacity: 0, x: '-50%', y: '-50%' }}
             className="glass"
             style={{
-              position: 'fixed',
-              top: '50%',
-              left: '50%',
-              width: '900px',
-              maxWidth: '95vw',
-              height: '600px',
-              maxHeight: '85vh',
-              zIndex: 2000,
-              padding: '15px',
-              display: 'flex',
-              gap: '15px',
-              border: '2px solid var(--color-primary)',
-              boxShadow: '0 0 50px rgba(0,0,0,0.8)'
+              position: 'fixed', top: '50%', left: '50%', width: '900px', maxWidth: '95vw', height: '600px', maxHeight: '85vh',
+              zIndex: 2000, padding: '15px', display: 'flex', gap: '15px', border: '2px solid var(--color-primary)', boxShadow: '0 0 50px rgba(0,0,0,0.8)'
             }}
           >
-            {/* Left: Video Feed */}
             <div style={{ flex: 2, display: 'flex', flexDirection: 'column' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 10px', alignItems: 'center' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -355,13 +359,11 @@ function App() {
               </div>
             </div>
 
-            {/* Right: Chat Interface */}
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', padding: '10px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '10px', marginBottom: '10px' }}>
                 <span style={{ fontWeight: 'bold', fontSize: '14px' }}>NETWORK CHAT</span>
                 <X size={18} style={{ cursor: 'pointer' }} onClick={() => setViewingUserId(null)} />
               </div>
-              
               <div style={{ flex: 1, overflowY: 'auto', marginBottom: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 {messages.map((msg, i) => (
                   <div key={i} style={{ fontSize: '12px', background: msg.from_id === user.id ? 'rgba(0, 243, 255, 0.1)' : 'rgba(255,255,255,0.05)', padding: '8px', borderRadius: '8px' }}>
@@ -371,13 +373,9 @@ function App() {
                 ))}
                 <div ref={chatEndRef} />
               </div>
-
               <form onSubmit={sendChat} style={{ display: 'flex', gap: '5px' }}>
                 <input 
-                  type="text" 
-                  value={chatInput}
-                  onChange={(e) => setChatInput(e.target.value)}
-                  placeholder="Type a message..."
+                  type="text" value={chatInput} onChange={(e) => setChatInput(e.target.value)} placeholder="Type a message..."
                   style={{ flex: 1, background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', padding: '8px', borderRadius: '6px', color: 'white', fontSize: '12px' }}
                 />
                 <button type="submit" style={{ background: 'var(--color-primary)', border: 'none', borderRadius: '6px', padding: '8px', cursor: 'pointer' }}>
@@ -389,7 +387,6 @@ function App() {
         )}
       </AnimatePresence>
 
-      {/* Global Chat Overlay */}
       <AnimatePresence>
         {!viewingUserId && (
           <motion.div 
@@ -406,10 +403,7 @@ function App() {
                 ))}
               </div>
               <form onSubmit={sendChat} style={{ display: 'flex', gap: '5px' }}>
-                <input 
-                  value={chatInput}
-                  onChange={(e) => setChatInput(e.target.value)}
-                  placeholder="Chat with network..."
+                <input value={chatInput} onChange={(e) => setChatInput(e.target.value)} placeholder="Chat with network..."
                   style={{ flex: 1, background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', padding: '5px 10px', borderRadius: '4px', color: 'white', fontSize: '11px' }}
                 />
               </form>
@@ -418,7 +412,6 @@ function App() {
         )}
       </AnimatePresence>
 
-      {/* Top Interface - Controls & Search */}
       <div style={{ position: 'absolute', top: '20px', left: '20px', right: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', zIndex: 100 }}>
         <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
           <VoiceToggle isEnabled={voiceEnabled} onToggle={toggleVoice} />
@@ -426,54 +419,56 @@ function App() {
         </div>
         <div style={{ display: 'flex', gap: '15px' }}>
           <SOSButton onTrigger={handleSOS} />
-          <button 
-            onClick={handleShareLink}
-            className="glass"
-            style={{ 
-              display: 'flex', 
-              alignItems: 'center', 
-              gap: '8px', 
-              padding: '10px 20px', 
-              border: `1px solid ${isCopied ? '#4ade80' : 'var(--color-primary)'}`, 
-              color: isCopied ? '#4ade80' : 'var(--color-primary)', 
-              fontWeight: 'bold', 
-              cursor: 'pointer',
-              transition: 'all 0.3s ease'
-            }}
+          <button onClick={handleShareLink} className="glass"
+            style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', border: `1px solid ${isCopied ? '#4ade80' : 'var(--color-primary)'}`, color: isCopied ? '#4ade80' : 'var(--color-primary)', fontWeight: 'bold', cursor: 'pointer', transition: 'all 0.3s ease' }}
           >
             {isCopied ? <Check size={18} /> : <Share2 size={18} />}
             {isCopied ? "COPIED!" : "SHARE"}
           </button>
-          <button 
-            onClick={handleLogout}
-            className="glass"
+          <button onClick={handleLogout} className="glass"
             style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', border: '1px solid var(--color-danger)', color: 'var(--color-danger)', fontWeight: 'bold', cursor: 'pointer' }}
           >
-            <LogOut size={18} />
-            LOGOUT
+            <LogOut size={18} /> LOGOUT
           </button>
         </div>
       </div>
 
-      {/* Alert Banner */}
       <AnimatePresence>
         {alert.alert_level !== 'safe' && (
           <AlertBanner level={alert.alert_level} hazard={alert.dominant_hazard} />
         )}
       </AnimatePresence>
 
-      {/* Bottom Interface Dock */}
       <div style={{ position: 'absolute', bottom: '20px', left: '20px', zIndex: 100, display: 'flex', alignItems: 'center', gap: '20px' }}>
         <div className="glass" style={{ padding: '15px 25px', display: 'flex', gap: '30px', alignItems: 'center', border: '1px solid var(--color-primary)' }}>
           <RiskMeter score={alert.risk_score} level={alert.alert_level} />
+          
           <div style={{ borderLeft: '1px solid var(--glass-border)', paddingLeft: '30px' }}>
             <div style={{ fontSize: '12px', opacity: 0.8, color: 'var(--color-primary)', fontWeight: 'bold' }}>YOUR SPEED</div>
             <div style={{ fontSize: '28px', fontWeight: 900, color: '#fff' }}>{(gps.speed * 3.6).toFixed(1)} <span style={{ fontSize: '14px', opacity: 0.6 }}>KM/H</span></div>
           </div>
+
+          {tripStats && (
+            <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} 
+              style={{ borderLeft: '1px solid var(--glass-border)', paddingLeft: '30px', display: 'flex', gap: '30px' }}
+            >
+              <div>
+                <div style={{ fontSize: '12px', opacity: 0.8, color: 'var(--color-primary)', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                  <Navigation size={12} /> DISTANCE
+                </div>
+                <div style={{ fontSize: '24px', fontWeight: 900, color: '#fff' }}>{tripStats.distance} <span style={{ fontSize: '14px', opacity: 0.6 }}>KM</span></div>
+              </div>
+              <div>
+                <div style={{ fontSize: '12px', opacity: 0.8, color: 'var(--color-primary)', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                  <Clock size={12} /> ETA
+                </div>
+                <div style={{ fontSize: '24px', fontWeight: 900, color: '#fff' }}>{tripStats.eta}</div>
+              </div>
+            </motion.div>
+          )}
         </div>
       </div>
 
-      {/* Status Indicators */}
       <div style={{ position: 'absolute', top: '20px', left: '50%', transform: 'translateX(-50%)', fontSize: '10px', opacity: 0.8, display: 'flex', gap: '15px', zIndex: 100, color: 'white', background: 'rgba(0,0,0,0.5)', padding: '5px 15px', borderRadius: '20px' }}>
         <span>USER: {user?.name}</span>
         <span>GPS: {gps.lat ? 'FIX' : 'WAIT'}</span>
