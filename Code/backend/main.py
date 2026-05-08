@@ -25,9 +25,14 @@ app.include_router(hazards.router, prefix="/api")
 app.include_router(sos.router, prefix="/api")
 app.include_router(ws_router.router)
 
+@app.get("/")
+def root():
+    return {"message": "SureStep Backend is Live!", "status": "active"}
+
 @app.get("/api/health")
 def health_check():
     return {"status": "ok", "db": "disabled"}
+
 
 @app.on_event("startup")
 def startup_event():

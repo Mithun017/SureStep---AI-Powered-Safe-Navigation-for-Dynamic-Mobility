@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import axios from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Map, Camera, Settings, Activity, User, Monitor, Globe, MessageSquare, Send, X } from 'lucide-react';
+import { Map, Camera, Settings, Activity, User, Monitor, Globe, MessageSquare, Send, X, LogOut, RefreshCw, Share2, Check } from 'lucide-react';
 
 import { useGPS } from './hooks/useGPS';
 import { useAccelerometer } from './hooks/useAccelerometer';
@@ -24,17 +24,30 @@ import './styles/global.css';
 const DEFAULT_API_BASE = 'http://localhost:8000/api';
 
 function App() {
-  const [apiBase, setApiBase] = useState(localStorage.getItem('SURESTEP_API_URL') || DEFAULT_API_BASE);
+  const [apiBase, setApiBase] = useState(() => {
+    // 1. Check URL params first (Smart Linking)
+    const params = new URLSearchParams(window.location.search);
+    const apiParam = params.get('api');
+    if (apiParam) {
+      localStorage.setItem('SURESTEP_API_URL', apiParam);
+      return apiParam;
+    }
+    // 2. Check localStorage
+    return localStorage.getItem('SURESTEP_API_URL') || DEFAULT_API_BASE;
+  });
+
   const [showApiSettings, setShowApiSettings] = useState(false);
   const [tempApiUrl, setTempApiUrl] = useState(apiBase);
+  const [isCopied, setIsCopied] = useState(false);
 
   const gps = useGPS();
   const accel = useAccelerometer();
   const { isEnabled: voiceEnabled, toggleVoice, speak } = useVoice();
 
   const [hasJoined, setHasJoined] = useState(false);
-  const [session, setSession] = useState(null);
-  const [user, setUser] = useState(null);
+  const [isInitializing, setIsInitializing] = useState(true);
+  const [session, setSession] = useState(JSON.parse(localStorage.getItem('SURESTEP_SESSION')) || null);
+  const [user, setUser] = useState(JSON.parse(localStorage.getItem('SURESTEP_USER')) || null);
   const [alert, setAlert] = useState({ risk_score: 0, alert_level: 'safe', dominant_hazard: '', detections: [] });
   const [hazards, setHazards] = useState([]);
   const [destination, setDestination] = useState(null);
@@ -59,8 +72,84 @@ function App() {
     window.location.reload(); 
   };
 
-  // 1. Initial User/Session Setup
+  const handleShareLink = async () => {
+    const frontendUrl = window.location.origin + window.location.pathname;
+    const shareableUrl = `${frontendUrl}?api=${apiBase}`;
+    
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(shareableUrl);
+      } else {
+        // Fallback for non-HTTPS or old browsers
+        const textArea = document.createElement("textarea");
+        textArea.value = shareableUrl;
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+      }
+      
+      setIsCopied(true);
+      setTimeout(() => setIsCopied(false), 3000);
+    } catch (err) {
+      console.error("Copy failed", err);
+      alert("Please copy this URL manually: " + shareableUrl);
+    }
+  };
+
+  const handleLogout = () => {
+    if (wsRef.current) wsRef.current.close();
+    localStorage.removeItem('SURESTEP_USER');
+    localStorage.removeItem('SURESTEP_SESSION');
+    setUser(null);
+    setSession(null);
+    setHasJoined(false);
+    window.location.reload();
+  };
+
+  const connectWS = useCallback((dbUser, dbSession) => {
+    const wsUrl = apiBase.replace('http', 'ws').replace('/api', '');
+    wsRef.current = new SureStepWS(
+      dbSession.id,
+      (data) => {
+        if (data.type === 'alert') {
+          setAlert(data);
+          if (data.alert_level !== 'safe' && voiceEnabled) {
+            speak(`Warning: ${data.dominant_hazard} detected.`);
+          }
+        } else if (data.type === 'user_list') {
+          setActiveUsers(data.users);
+        } else if (data.type === 'remote_frame') {
+          setRemoteFrame(data.frame);
+        } else if (data.type === 'fall_alert') {
+          speak("Fall detected!");
+        } else if (data.type === 'chat') {
+          setMessages(prev => [...prev, data]);
+        }
+      },
+      (err) => {
+        console.error("WS Error:", err);
+        setIsInitializing(false);
+      },
+      wsUrl
+    );
+
+    const checkOpen = setInterval(() => {
+      if (wsRef.current?.ws?.readyState === 1) {
+        wsRef.current.send({
+          type: "join",
+          user_id: dbUser.id,
+          name: dbUser.name
+        });
+        setHasJoined(true);
+        setIsInitializing(false);
+        clearInterval(checkOpen);
+      }
+    }, 100);
+  }, [apiBase, voiceEnabled, speak]);
+
   const handleJoin = async (name) => {
+    setIsInitializing(true);
     try {
       const userRes = await axios.post(`${apiBase}/users`, {
         name: name,
@@ -69,59 +158,37 @@ function App() {
       });
       const dbUser = userRes.data;
       setUser(dbUser);
+      localStorage.setItem('SURESTEP_USER', JSON.stringify(dbUser));
 
       const sessionRes = await axios.post(`${apiBase}/sessions`, {
         user_id: dbUser.id,
         start_lat: gps.lat || 0,
         start_lon: gps.lon || 0,
         end_lat: gps.lat || 0,
-        end_lon: gps.lon || 0
+        end_lon: gps.lat || 0
       });
       setSession(sessionRes.data);
+      localStorage.setItem('SURESTEP_SESSION', JSON.stringify(sessionRes.data));
 
-      const wsUrl = apiBase.replace('http', 'ws').replace('/api', '');
-      wsRef.current = new SureStepWS(
-        sessionRes.data.id,
-        (data) => {
-          if (data.type === 'alert') {
-            setAlert(data);
-            if (data.alert_level !== 'safe' && voiceEnabled) {
-              speak(`Warning: ${data.dominant_hazard} detected.`);
-            }
-          } else if (data.type === 'user_list') {
-            setActiveUsers(data.users);
-          } else if (data.type === 'remote_frame') {
-            setRemoteFrame(data.frame);
-          } else if (data.type === 'fall_alert') {
-            speak("Fall detected!");
-          } else if (data.type === 'chat') {
-            setMessages(prev => [...prev, data]);
-          }
-        },
-        (err) => console.error("WS Error:", err),
-        wsUrl
-      );
-
-      const checkOpen = setInterval(() => {
-        if (wsRef.current?.ws?.readyState === 1) {
-          wsRef.current.send({
-            type: "join",
-            user_id: dbUser.id,
-            name: dbUser.name
-          });
-          setHasJoined(true);
-          clearInterval(checkOpen);
-        }
-      }, 100);
-
+      connectWS(dbUser, sessionRes.data);
     } catch (err) {
       console.error("Join failed:", err);
-      alert("Connection to backend failed. Please check your API URL settings.");
+      alert("Connection to backend failed. Ensure backend is running and Ngrok is active.");
       setShowApiSettings(true);
+      setIsInitializing(false);
     }
   };
 
-  // 2. Processing Loop (500ms)
+  useEffect(() => {
+    if (user && session) {
+      if (!hasJoined && !wsRef.current) {
+        connectWS(user, session);
+      }
+    } else {
+      setIsInitializing(false);
+    }
+  }, [user, session, hasJoined, connectWS]);
+
   useEffect(() => {
     if (!wsRef.current || !session || !user || !hasJoined) return;
 
@@ -140,7 +207,6 @@ function App() {
     return () => clearInterval(interval);
   }, [session, user, gps, accel, hasJoined]);
 
-  // 3. Subscription Management
   useEffect(() => {
     if (!wsRef.current || !viewingUserId || !user || viewingUserId === user.id) {
       setRemoteFrame(null);
@@ -177,6 +243,16 @@ function App() {
       console.error("SOS failed:", e);
     }
   };
+
+  if (isInitializing) {
+    return (
+      <div style={{ height: '100vh', width: '100vw', background: '#0a0a14', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'white' }}>
+        <RefreshCw className="pulse" size={64} color="var(--color-primary)" style={{ marginBottom: '20px' }} />
+        <h2 style={{ letterSpacing: '4px', fontWeight: 900 }}>SURESTEP</h2>
+        <p style={{ fontSize: '12px', opacity: 0.5, marginTop: '10px' }}>ESTABLISHING SECURE NETWORK...</p>
+      </div>
+    );
+  }
 
   if (!hasJoined) {
     return (
@@ -226,7 +302,7 @@ function App() {
       </div>
 
       {/* Left Side User Panel */}
-      <div style={{ position: 'absolute', top: '100px', left: '20px', zIndex: 100 }}>
+      <div style={{ position: 'absolute', top: '140px', left: '20px', zIndex: 100 }}>
         <UserList 
           users={activeUsers} 
           onSelectUser={setViewingUserId} 
@@ -242,24 +318,24 @@ function App() {
       <AnimatePresence>
         {viewingUserId && viewingUserId !== user.id && (
           <motion.div
-            initial={{ scale: 0.8, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            exit={{ scale: 0.8, opacity: 0 }}
+            initial={{ scale: 0.9, opacity: 0, x: '-50%', y: '-50%' }}
+            animate={{ scale: 1, opacity: 1, x: '-50%', y: '-50%' }}
+            exit={{ scale: 0.9, opacity: 0, x: '-50%', y: '-50%' }}
             className="glass"
             style={{
-              position: 'absolute',
+              position: 'fixed',
               top: '50%',
               left: '50%',
-              transform: 'translate(-50%, -50%)',
-              width: '800px',
+              width: '900px',
               maxWidth: '95vw',
-              height: '500px',
-              maxHeight: '80vh',
-              zIndex: 1000,
-              padding: '10px',
+              height: '600px',
+              maxHeight: '85vh',
+              zIndex: 2000,
+              padding: '15px',
               display: 'flex',
-              gap: '10px',
-              border: '2px solid var(--color-primary)'
+              gap: '15px',
+              border: '2px solid var(--color-primary)',
+              boxShadow: '0 0 50px rgba(0,0,0,0.8)'
             }}
           >
             {/* Left: Video Feed */}
@@ -318,7 +394,7 @@ function App() {
         {!viewingUserId && (
           <motion.div 
             initial={{ y: 100, opacity: 0 }} animate={{ y: 0, opacity: 1 }}
-            style={{ position: 'absolute', bottom: '100px', left: '280px', width: '300px', height: '200px', zIndex: 100, display: 'flex', flexDirection: 'column' }}
+            style={{ position: 'absolute', bottom: '180px', left: '280px', width: '300px', height: '200px', zIndex: 100, display: 'flex', flexDirection: 'column' }}
           >
             <div className="glass" style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '10px', fontSize: '12px' }}>
               <div style={{ flex: 1, overflowY: 'auto', marginBottom: '5px' }}>
@@ -348,7 +424,35 @@ function App() {
           <VoiceToggle isEnabled={voiceEnabled} onToggle={toggleVoice} />
           <SearchPanel onLocationSelect={setDestination} />
         </div>
-        <SOSButton onTrigger={handleSOS} />
+        <div style={{ display: 'flex', gap: '15px' }}>
+          <SOSButton onTrigger={handleSOS} />
+          <button 
+            onClick={handleShareLink}
+            className="glass"
+            style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '8px', 
+              padding: '10px 20px', 
+              border: `1px solid ${isCopied ? '#4ade80' : 'var(--color-primary)'}`, 
+              color: isCopied ? '#4ade80' : 'var(--color-primary)', 
+              fontWeight: 'bold', 
+              cursor: 'pointer',
+              transition: 'all 0.3s ease'
+            }}
+          >
+            {isCopied ? <Check size={18} /> : <Share2 size={18} />}
+            {isCopied ? "COPIED!" : "SHARE"}
+          </button>
+          <button 
+            onClick={handleLogout}
+            className="glass"
+            style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', border: '1px solid var(--color-danger)', color: 'var(--color-danger)', fontWeight: 'bold', cursor: 'pointer' }}
+          >
+            <LogOut size={18} />
+            LOGOUT
+          </button>
+        </div>
       </div>
 
       {/* Alert Banner */}

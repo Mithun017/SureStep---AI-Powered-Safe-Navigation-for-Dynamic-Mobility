@@ -5,13 +5,14 @@ import { motion } from 'framer-motion';
 const UserList = ({ users, onSelectUser, selectedUserId, currentUserId }) => {
   return (
     <div className="glass" style={{
-      width: '240px',
-      height: 'calc(100vh - 120px)',
+      width: '200px',
+      maxHeight: '400px',
       display: 'flex',
       flexDirection: 'column',
-      padding: '20px',
-      gap: '15px'
+      padding: '15px',
+      gap: '12px'
     }}>
+
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '10px' }}>
         <Users size={20} color="var(--color-primary)" />
         <span style={{ fontWeight: 'bold', fontSize: '14px' }}>ACTIVE NAVIGATORS</span>
