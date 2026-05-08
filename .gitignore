@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+.env
+
+# Node
+node_modules/
+dist/
+.eslintcache
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Project Specific
+Code/backend/yolov8n.pt
+Code/backend/runs/
+Code/backend/hazards/
+Code/backend/*.log
+
+# OS
+.DS_Store
+Thumbs.db

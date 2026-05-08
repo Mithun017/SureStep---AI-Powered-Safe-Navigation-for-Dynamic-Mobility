@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+python-dotenv
+pydantic[email]
+pydantic-settings
+websockets
+httpx
+python-multipart
+pillow
+ultralytics
+opencv-python-headless
